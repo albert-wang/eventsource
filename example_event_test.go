@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/donovanhide/eventsource"
+	"github.com/albert-wang/eventsource"
 )
 
 type TimeEvent time.Time
@@ -33,7 +33,7 @@ func ExampleEvent() {
 	srv := eventsource.NewServer()
 	srv.Gzip = true
 	defer srv.Close()
-	l, err := net.Listen("tcp", ":8080")
+	l, err := net.Listen("tcp", ":63291")
 	if err != nil {
 		return
 	}
@@ -41,7 +41,7 @@ func ExampleEvent() {
 	http.HandleFunc("/time", srv.Handler("time"))
 	go http.Serve(l, nil)
 	go TimePublisher(srv)
-	stream, err := eventsource.Subscribe("http://127.0.0.1:8080/time", "")
+	stream, err := eventsource.Subscribe("http://127.0.0.1:63291/time", "")
 	if err != nil {
 		return
 	}

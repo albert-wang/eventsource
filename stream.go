@@ -62,7 +62,7 @@ func SubscribeWith(lastEventId string, client *http.Client, request *http.Reques
 		req:         request,
 		lastEventId: lastEventId,
 		retry:       (time.Millisecond * 3000),
-		Events:      make(chan Event),
+		Events:      make(chan Event, 2048),
 		Errors:      make(chan error),
 	}
 	stream.c.CheckRedirect = checkRedirect
@@ -111,41 +111,44 @@ func (stream *Stream) connect() (r io.ReadCloser, err error) {
 }
 
 func (stream *Stream) stream(r io.ReadCloser) {
-	defer r.Close()
 	dec := NewDecoder(r)
 	for {
-		ev, err := dec.Decode()
+		// Read loop
+		for {
+			ev, err := dec.Decode()
 
-		if err != nil {
+			if err != nil {
+				stream.Errors <- err
+				// respond to all errors by reconnecting and trying again
+				break
+			}
+			pub := ev.(*publication)
+			if pub.Retry() > 0 {
+				stream.retry = time.Duration(pub.Retry()) * time.Millisecond
+			}
+			if len(pub.Id()) > 0 {
+				stream.lastEventId = pub.Id()
+			}
+			stream.Events <- ev
+		}
+
+		r.Close()
+
+		// Reconnection Logic
+		backoff := stream.retry
+		for {
+			time.Sleep(backoff)
+			if stream.Logger != nil {
+				stream.Logger.Printf("Reconnecting in %0.4f secs\n", backoff.Seconds())
+			}
+
+			next, err := stream.connect()
+			if err == nil {
+				r = next
+				break
+			}
 			stream.Errors <- err
-			// respond to all errors by reconnecting and trying again
-			break
+			backoff *= 2
 		}
-		pub := ev.(*publication)
-		if pub.Retry() > 0 {
-			stream.retry = time.Duration(pub.Retry()) * time.Millisecond
-		}
-		if len(pub.Id()) > 0 {
-			stream.lastEventId = pub.Id()
-		}
-		stream.Events <- ev
-	}
-	backoff := stream.retry
-	for {
-		time.Sleep(backoff)
-		if stream.Logger != nil {
-			stream.Logger.Printf("Reconnecting in %0.4f secs\n", backoff.Seconds())
-		}
-
-		// NOTE: because of the defer we're opening the new connection
-		// before closing the old one. Shouldn't be a problem in practice,
-		// but something to be aware of.
-		next, err := stream.connect()
-		if err == nil {
-			go stream.stream(next)
-			break
-		}
-		stream.Errors <- err
-		backoff *= 2
 	}
 }
