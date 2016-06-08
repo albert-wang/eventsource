@@ -111,8 +111,9 @@ func (stream *Stream) connect() (r io.ReadCloser, err error) {
 }
 
 func (stream *Stream) stream(r io.ReadCloser) {
-	dec := NewDecoder(r)
 	for {
+		dec := NewDecoder(r)
+
 		// Read loop
 		for {
 			ev, err := dec.Decode()
